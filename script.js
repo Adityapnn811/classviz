@@ -12,48 +12,52 @@ TODO
 - tweak klay parameters
 */
 
-document.addEventListener('DOMContentLoaded', function () { // on dom ready
+document.addEventListener("DOMContentLoaded", function () {
+  // on dom ready
 
-  const filePrefix = (new URLSearchParams(window.location.search)).get('p')
+  const filePrefix = new URLSearchParams(window.location.search).get("p");
 
   if (filePrefix) {
-    const eles = fetch(`data/${filePrefix ? filePrefix : ''}.json`)
-      .then(res => res.json())
-      .then(json => json.elements)
-      .then(eles => prepareEles(eles))
+    const eles = fetch(`data/${filePrefix ? filePrefix : ""}.json`)
+      .then((res) => res.json())
+      .then((json) => json.elements)
+      .then((eles) => prepareEles(eles));
 
-    document.getElementById("filename").textContent = `Software Visualization: ${filePrefix}.json`;
+    document.getElementById(
+      "filename"
+    ).textContent = `Software Visualization: ${filePrefix}.json`;
 
-    const style = fetch('style.cycss')
-      .then(res => res.text());
+    const style = fetch("style.cycss").then((res) => res.text());
 
-    Promise.all([eles, style])
-      .then(initCy);
+    Promise.all([eles, style]).then(initCy);
   }
 });
 
 const prepareEles = function (eles) {
-
   eles.nodes.forEach((node) => {
-    node.data.name = node.data.properties.shortname ? node.data.properties.shortname : node.data.properties.simpleName;
+    node.data.name = node.data.properties.shortname
+      ? node.data.properties.shortname
+      : node.data.properties.simpleName;
     node.data.label = `${node.data.name}`;
   });
 
   eles.edges.forEach((edge) => {
-    edge.data.interaction = edge.data.label ? edge.data.label : edge.data.labels.join();
+    edge.data.interaction = edge.data.label
+      ? edge.data.label
+      : edge.data.labels.join();
   });
 
   return eles;
-}
+};
 
 function setParents(relationship, inverted) {
-  cy.edges("#parentRel").removeClass("parentRel")
+  cy.edges("#parentRel").removeClass("parentRel");
   if (inverted) {
-    cy.edges(`[interaction = "${relationship}"]`).forEach(edge => {
+    cy.edges(`[interaction = "${relationship}"]`).forEach((edge) => {
       edge.source().move({ parent: edge.target().id() });
     });
   } else {
-    cy.edges(`[interaction = "${relationship}"]`).forEach(edge => {
+    cy.edges(`[interaction = "${relationship}"]`).forEach((edge) => {
       edge.target().move({ parent: edge.source().id() });
     });
   }
@@ -63,12 +67,12 @@ function setParents(relationship, inverted) {
 let parentRel = "contains";
 
 const rs_colors = {
-  "Controller": ["#984ea3", "#decbe4"],
-  "Coordinator": ["#4daf4a", "#ccebc5"],
+  Controller: ["#984ea3", "#decbe4"],
+  Coordinator: ["#4daf4a", "#ccebc5"],
   "Information Holder": ["#e4105c", "#fbb4ae"],
-  "Interfacer": ["#ff7f00", "#fed9a6"],
+  Interfacer: ["#ff7f00", "#fed9a6"],
   "Service Provider": ["#377eb8", "#b3cde3"],
-  "Structurer": ["#f781bf", "#fddaec"],
+  Structurer: ["#f781bf", "#fddaec"],
 };
 
 const ft_colors = [
@@ -86,29 +90,64 @@ const ft_colors = [
   "#ffed6f",
 ];
 
+function generateExpColOptions(layoutName = "klay") {
+  let cyExpandCollapseOptions = {
+    // set default layout by klay
+    layoutBy: {
+      name: typeof layoutName === "string" ? layoutName : "klay",
+      randomize: false,
+      fit: false,
+    },
+    animate: false,
+    fisheye: false,
+    undoable: false,
+    cueEnabled: true,
+    expandCollapseCuePosition: "top-left",
+    groupEdgesOfSameTypeOnCollapse: true,
+    allowNestedEdgeCollapse: true,
+  };
+
+  return cyExpandCollapseOptions;
+}
+
+// Memory to save expanded and collapsed nodes in stack
+let expandedNodesIdx = [];
+let collapsedNodes = [];
+let zoom;
+
 function initCy(payload) {
-
-  const cy = window.cy = cytoscape({
-
-    container: document.getElementById('cy'),
+  const cy = (window.cy = cytoscape({
+    container: document.getElementById("cy"),
 
     elements: {
       nodes: payload[0].nodes,
-      edges: payload[0].edges
+      edges: payload[0].edges,
+    },
+
+    // inititate cytoscape expand collapse
+    ready: function () {
+      let api = this.expandCollapse(generateExpColOptions());
+
+      document
+        .getElementById("collapseNodes")
+        .addEventListener("click", () => api.collapseAll());
+      document
+        .getElementById("expandNodes")
+        .addEventListener("click", () => api.expandAll());
     },
 
     style: payload[1],
 
     wheelSensitivity: 0.25,
-  });
+  }));
 
   setParents(parentRel, false);
 
-  cy.nodes('[properties.kind = "package"]').forEach((n) => {
+  // Ini buat isolasi node yg package
+  cy.nodes('[properties.kind = "package"]').forEach((n, idx) => {
     const d = n.ancestors().length;
-    // console.log(n.data('id'),d);
-    const grey = Math.min(160 + (d*20), 255);
-    n.style('background-color', `rgb(${grey},${grey},${grey})`);
+    const grey = Math.min(160 + d * 20, 255);
+    n.style("background-color", `rgb(${grey},${grey},${grey})`);
   });
 
   fillRSFilter(cy);
@@ -127,6 +166,7 @@ function initCy(payload) {
   showPrimitives(cbShowPrimitives);
   showPackages(cbShowPackages);
 
+  zoom = cy.zoom();
   // cy.nodes().filter('node').forEach(n => (bindPopper(n)))
   return cy;
 }
@@ -151,156 +191,200 @@ infoTitle.addEventListener("click", function () {
 });
 
 function bindRouters() {
+  // Initiate cyExpandCollapseApi
+  let api = cy.expandCollapse("get");
 
   // right click dims the element
-  cy.on('cxttap', 'node,edge',
-    evt => {
-      evt.target.addClass("dimmed")
-      const interactions = Array.from(document
-        .querySelectorAll('input[name="showrels"]'))
-        .filter(cb => cb.checked).map(cb => cb.value);
+  cy.on("cxttap", "node,edge", (evt) => {
+    evt.target.addClass("dimmed");
+    const interactions = Array.from(
+      document.querySelectorAll('input[name="showrels"]')
+    )
+      .filter((cb) => cb.checked)
+      .map((cb) => cb.value);
 
-      const edges = evt.target.connectedEdges()
-        .filter(e => interactions.includes(e.data('interaction')));
-      edges.addClass("dimmed");
-    });
+    const edges = evt.target
+      .connectedEdges()
+      .filter((e) => interactions.includes(e.data("interaction")));
+    edges.addClass("dimmed");
+  });
 
   // left click highlights the node and its connected edges and nodes
-  cy.on('tap', 'node', evt => {
-    evt.target.removeClass("dimmed")
+  cy.on("tap", "node", (evt) => {
+    evt.target.removeClass("dimmed");
 
     // currently visible relationship types
-    const interactions = Array.from(document
-      .querySelectorAll('input[name="showrels"]'))
-      .filter(cb => cb.checked).map(cb => cb.value);
+    const interactions = Array.from(
+      document.querySelectorAll('input[name="showrels"]')
+    )
+      .filter((cb) => cb.checked)
+      .map((cb) => cb.value);
 
-    const edges = evt.target.connectedEdges()
-      .filter(e => interactions.includes(e.data('interaction')));
+    const edges = evt.target
+      .connectedEdges()
+      .filter((e) => interactions.includes(e.data("interaction")));
     edges.removeClass("dimmed");
     edges.connectedNodes().removeClass("dimmed");
-
   });
 
   // left click highlights the edge and its connected nodes
-  cy.on('tap', 'edge', evt => {
+  cy.on("tap", "edge", (evt) => {
     evt.target.removeClass("dimmed");
     evt.target.connectedNodes().removeClass("dimmed");
   });
 
-  cy.on('mouseover', 'node', evt => {
+  cy.on("mouseover", "node", (evt) => {
     var infoHeader = document.createElement("h3");
     var infoSubeader = document.createElement("p");
     var infoText = document.createElement("p");
 
     infoHeader.textContent = evt.target.data()["properties"]["simpleName"];
-    infoText.textContent = evt.target.data()["properties"]["description"] ? evt.target.data()["properties"]["description"] : "(no description)";
+    infoText.textContent = evt.target.data()["properties"]["description"]
+      ? evt.target.data()["properties"]["description"]
+      : "(no description)";
 
-    
-
-    if (evt.target.data()['labels'].includes('Structure')) {
+    if (evt.target.data()["labels"].includes("Structure")) {
       if (evt.target.data()["properties"]["rs"]) {
-        infoBody.style.backgroundColor = rs_colors[evt.target.data()["properties"]["rs"]][1];
-        infoSubeader.innerHTML = `<b><i>${evt.target.data()["properties"]["kind"]}</i> – ${evt.target.data()["properties"]["rs"]}</b>`;
+        infoBody.style.backgroundColor =
+          rs_colors[evt.target.data()["properties"]["rs"]][1];
+        infoSubeader.innerHTML = `<b><i>${
+          evt.target.data()["properties"]["kind"]
+        }</i> – ${evt.target.data()["properties"]["rs"]}</b>`;
       } else {
         infoBody.style.backgroundColor = "inherit";
-        infoSubeader.innerHTML = `<b><i>${evt.target.data()["properties"]["kind"]}</i></b>`;
+        infoSubeader.innerHTML = `<b><i>${
+          evt.target.data()["properties"]["kind"]
+        }</i></b>`;
       }
-    } else if (evt.target.data()['labels'].includes('Container')) {
+    } else if (evt.target.data()["labels"].includes("Container")) {
       infoBody.style.backgroundColor = "inherit";
-      infoSubeader.innerHTML = `<b><i>${evt.target.data()["properties"]["kind"]}</i></b>`;
+      infoSubeader.innerHTML = `<b><i>${
+        evt.target.data()["properties"]["kind"]
+      }</i></b>`;
     }
 
     infoBody.innerHTML = "";
     infoBody.appendChild(infoHeader);
     infoBody.appendChild(infoSubeader);
     infoBody.appendChild(infoText);
-
   });
 
+  // TODO: Handle zooming
+  // Still bugged,
+  cy.on("scrollzoom", (e) => {
+    // FIlter each nodes that is a package
+    cy.nodes('[properties.kind = "package"]').forEach((n) => {
+      const { w, h } = n.layoutDimensions();
+      // if zooming in
+      if (zoom < cy.zoom() && h / w > 0.3) {
+        // check if collapsed
+        if (n.hasClass("cy-expand-collapse-collapsed-node"))
+          api.expand(n, generateExpColOptions());
+      }
+      // if zooming out
+      else if (zoom > cy.zoom() && h / w <= 0.3) {
+        if (!n.hasClass("cy-expand-collapse-collapsed-node"))
+          api.collapse(n, generateExpColOptions());
+      }
+    });
+    zoom = cy.zoom();
+  });
 }
 
 const relayout = function (layout) {
   cy.layout({
-    name: layout, animate: true,
+    name: layout,
+    animate: true,
     nodeDimensionsIncludeLabels: true,
     klay: {
-      direction: 'DOWN',
-      edgeRouting: 'ORTHOGONAL',
+      direction: "DOWN",
+      edgeRouting: "ORTHOGONAL",
       routeSelfLoopInside: true,
       thoroughness: 4,
-      spacing: 32
-    }
+      spacing: 32,
+    },
   }).run();
+  // Re set the expandCollapse options
+  cy.expandCollapse(generateExpColOptions(layout));
 };
 
 const saveAsSvg = function (filename) {
-  const svgContent = cy.svg({ scale: 1, full: true, bg: 'beige' });
-  const blob = new Blob([svgContent],
-    { type: "image/svg+xml;charset=utf-8" });
+  const svgContent = cy.svg({ scale: 1, full: true, bg: "beige" });
+  const blob = new Blob([svgContent], { type: "image/svg+xml;charset=utf-8" });
   saveAs(blob, filename);
 };
 
 const getSvgUrl = function () {
-  const svgContent = cy.svg({ scale: 1, full: true, bg: 'beige' });
-  const blob = new Blob([svgContent],
-    { type: "image/svg+xml;charset=utf-8" });
+  const svgContent = cy.svg({ scale: 1, full: true, bg: "beige" });
+  const blob = new Blob([svgContent], { type: "image/svg+xml;charset=utf-8" });
   return URL.createObjectURL(blob);
 };
 
 const showPrimitives = function (ele) {
-  cy.nodes().filter((n) => n.data("labels").includes("Primitive") || n.data("id") === "java.lang.String")
+  cy.nodes()
+    .filter(
+      (n) =>
+        n.data("labels").includes("Primitive") ||
+        n.data("id") === "java.lang.String"
+    )
     .style({ display: ele.checked ? "element" : "none" });
 };
 
 const showPackages = function (ele) {
-  cy.nodes().filter((n) => n.data("labels").includes("Container") && n.data("labels").length === 1)
+  cy.nodes()
+    .filter(
+      (n) =>
+        n.data("labels").includes("Container") && n.data("labels").length === 1
+    )
     .toggleClass("pkghidden", !ele.checked);
 };
 
 const setVisible = function (ele) {
-  cy.edges(`[interaction = "${ele.value}"]`)
-    .toggleClass("hidden", !ele.checked);
+  cy.edges(`[interaction = "${ele.value}"]`).toggleClass(
+    "hidden",
+    !ele.checked
+  );
 };
 
 const setLineBends = function (ele) {
   if (ele.checked) {
-    cy.edges(`[interaction = "${ele.name}"]`)
-      .style("curve-style", ele.value);
+    cy.edges(`[interaction = "${ele.name}"]`).style("curve-style", ele.value);
   }
 };
 
 const fileUpload = function () {
-  const fileSelector = document.getElementById("file-selector")
+  const fileSelector = document.getElementById("file-selector");
   fileSelector.click();
-  fileSelector.addEventListener('change', (event) => {
+  fileSelector.addEventListener("change", (event) => {
     const file = event.target.files[0];
     filePrefix = file.name;
-    document.getElementById("filename").textContent = `Software Visualization: ${filePrefix}`;
+    document.getElementById(
+      "filename"
+    ).textContent = `Software Visualization: ${filePrefix}`;
     const reader = new FileReader();
-    reader.readAsText(file, 'UTF-8');
+    reader.readAsText(file, "UTF-8");
     reader.onload = function (e) {
       json = JSON.parse(e.target.result);
       eles = prepareEles(json.elements);
-      const style = fetch('style.cycss')
-        .then(res => res.text());
+      const style = fetch("style.cycss").then((res) => res.text());
 
-      Promise.all([eles, style])
-        .then(initCy);
-    }
+      Promise.all([eles, style]).then(initCy);
+    };
   });
-}
+};
 
 flip = true;
 const toggleVisibility = function () {
-  cy.style().selector('.dimmed')
+  cy.style()
+    .selector(".dimmed")
     .style({
-      'display': flip ? 'none' : 'element'
+      display: flip ? "none" : "element",
     })
     .update();
   flip = !flip;
 };
 
-const fillRSFilter = function(_cy) {
+const fillRSFilter = function (_cy) {
   const menuNodes = document.getElementById("menu-nodes");
 
   const rsHeader = document.createElement("p");
@@ -308,11 +392,10 @@ const fillRSFilter = function(_cy) {
   menuNodes.appendChild(rsHeader);
 
   for (let i = 0; i < Object.keys(rs_colors).length; i++) {
-
     const div = document.createElement("div");
     const label = document.createElement("label");
     label.setAttribute("for", `rs-${Object.keys(rs_colors)[i]}`);
-    label.setAttribute("class", "rslabel")
+    label.setAttribute("class", "rslabel");
     const checkbox = document.createElement("input");
     checkbox.setAttribute("type", "checkbox");
     checkbox.setAttribute("id", `rs-${Object.keys(rs_colors)[i]}`);
@@ -327,10 +410,9 @@ const fillRSFilter = function(_cy) {
     div.appendChild(label);
     menuNodes.appendChild(div);
   }
-}
+};
 
 const fillRelationshipToggles = function (_cy) {
-
   const table = document.getElementById("reltab"); // Get the table element
   table.innerHTML = "";
 
@@ -359,9 +441,11 @@ const fillRelationshipToggles = function (_cy) {
   // Append the thead element to the table element
   table.appendChild(thead);
 
-  _cy.edges().map(e => e.data('interaction'))
+  _cy
+    .edges()
+    .map((e) => e.data("interaction"))
     .filter((v, i, s) => s.indexOf(v) === i)
-    .forEach(l => {
+    .forEach((l) => {
       // Create a new row (tr)
       const row = document.createElement("tr");
 
@@ -409,12 +493,10 @@ const fillRelationshipToggles = function (_cy) {
       table.appendChild(row);
     });
 
-  document.querySelectorAll('input[name="showrels"]')
-    .forEach((checkbox) => {
-      setVisible(checkbox);
-    });
-
-}
+  document.querySelectorAll('input[name="showrels"]').forEach((checkbox) => {
+    setVisible(checkbox);
+  });
+};
 
 const fillFeatureDropdown = function (_cy) {
   let tracesSet = new Set();
@@ -429,15 +511,14 @@ const fillFeatureDropdown = function (_cy) {
   let tracesList = Array.from(tracesSet);
 
   // Get the dropdown element.
-  const dropdown = document.getElementById('selectfeature');
+  const dropdown = document.getElementById("selectfeature");
   dropdown.innerHTML = "";
 
   for (let i = 0; i < tracesList.length; i++) {
-
     const div = document.createElement("div");
     const label = document.createElement("label");
     label.setAttribute("for", `feature-${tracesList[i]}`);
-    label.setAttribute("class", "featurelabel")
+    label.setAttribute("class", "featurelabel");
     const checkbox = document.createElement("input");
     checkbox.setAttribute("type", "checkbox");
     checkbox.setAttribute("id", `feature-${tracesList[i]}`);
@@ -453,32 +534,28 @@ const fillFeatureDropdown = function (_cy) {
   }
 };
 
-
 const fillBugsDropdown = function (_cy) {
   let bugsSet = new Set();
   _cy.nodes().forEach((e) => {
     if (e.data()["properties"]["vulnerabilities"]) {
-     e.data()["properties"]["vulnerabilities"].forEach((bug) => {
-
-       bugsSet.add(bug["analysis_name"])
+      e.data()["properties"]["vulnerabilities"].forEach((bug) => {
+        bugsSet.add(bug["analysis_name"]);
       });
     }
   });
 
-
-  let bugList = Array.from(bugsSet)
+  let bugList = Array.from(bugsSet);
   // console.log(bugList)
 
   // Get the dropdown element.
-  const dropdown = document.getElementById('tab-bugs');
+  const dropdown = document.getElementById("tab-bugs");
   dropdown.innerHTML = "";
 
   for (var i = 0; i < bugList.length; i++) {
-
     const div = document.createElement("div");
     const label = document.createElement("label");
     label.setAttribute("for", `bug-${bugList[i]}`);
-    label.setAttribute("class", "buglabel")
+    label.setAttribute("class", "buglabel");
     const checkbox = document.createElement("input");
     checkbox.setAttribute("type", "checkbox");
     checkbox.setAttribute("id", `bug-${bugList[i]}`);
@@ -494,8 +571,6 @@ const fillBugsDropdown = function (_cy) {
   }
 };
 
-
-
 function arrayIntersection(arr1, arr2) {
   const result = [];
   for (const item of arr1) {
@@ -506,16 +581,16 @@ function arrayIntersection(arr1, arr2) {
   return result;
 }
 
+// Highlight nodes berdasarkan query
 const highlight = function (text) {
   if (text) {
     const classes = text.split(/[,\s]+/);
     cy.elements().addClass("dimmed");
-    cy.elements('.hidden').removeClass('hidden').addClass("hidden");
+    cy.elements(".hidden").removeClass("hidden").addClass("hidden");
 
-    const cy_classes = cy.nodes()
-      .filter(function (node) {
-        return classes.includes(node.data('name'));
-      });
+    const cy_classes = cy.nodes().filter(function (node) {
+      return classes.includes(node.data("name"));
+    });
     const cy_edges = cy_classes.edgesWith(cy_classes);
     cy_classes.removeClass("dimmed");
     cy_edges.removeClass("dimmed");
@@ -531,49 +606,60 @@ const showRS = function (evt) {
   // console.log(evt.checked, evt.value);
   if (evt.checked) {
     cy.nodes(`[properties.rs = "${evt.value}"]`).removeClass("dimmed");
-    cy.nodes(`[properties.rs = "${evt.value}"]`).connectedEdges().filter((e) => {
-      console.log(e.source(), e.target());
-      return !e.source().hasClass("dimmed") && !e.target().hasClass("dimmed");
-    }).removeClass("dimmed");
+    cy.nodes(`[properties.rs = "${evt.value}"]`)
+      .connectedEdges()
+      .filter((e) => {
+        console.log(e.source(), e.target());
+        return !e.source().hasClass("dimmed") && !e.target().hasClass("dimmed");
+      })
+      .removeClass("dimmed");
   } else {
     cy.nodes(`[properties.rs = "${evt.value}"]`).addClass("dimmed");
-    cy.nodes(`[properties.rs = "${evt.value}"]`).connectedEdges().addClass("dimmed");
+    cy.nodes(`[properties.rs = "${evt.value}"]`)
+      .connectedEdges()
+      .addClass("dimmed");
   }
 };
 
 const showTrace = function (evt) {
-
   const trace_names = Array.from(document.getElementsByName("showfeatures"))
-      .filter((e) => e.checked)
-      .map((e) => e.value);
+    .filter((e) => e.checked)
+    .map((e) => e.value);
 
   Array.from(document.getElementsByClassName("featurelabel")).forEach((e) => {
     e.style.backgroundColor = "";
   });
 
   if (trace_names.length > 0) {
-
     const colorMap = {};
     for (var i = 0; i < trace_names.length; i++) {
-      const labelElement = document.querySelector(`label[for="feature-${trace_names[i]}"]`);
+      const labelElement = document.querySelector(
+        `label[for="feature-${trace_names[i]}"]`
+      );
       labelElement.style.backgroundColor = ft_colors[i];
       colorMap[trace_names[i]] = ft_colors[i];
     }
 
     const feature_nodes = cy.nodes().filter(function (node) {
       return trace_names.some(function (trace) {
-        return node.data("properties.traces") && node.data("properties.traces").includes(trace);
+        return (
+          node.data("properties.traces") &&
+          node.data("properties.traces").includes(trace)
+        );
       });
     });
 
     const feature_edges = cy.edges().filter(function (edge) {
       return trace_names.some(function (trace) {
-        return edge.data("properties.traces") && edge.data("properties.traces").includes(trace);
+        return (
+          edge.data("properties.traces") &&
+          edge.data("properties.traces").includes(trace)
+        );
       });
     });
 
     cy.elements().addClass("dimmed");
-    cy.elements('.hidden').removeClass('hidden').addClass("hidden");
+    cy.elements(".hidden").removeClass("hidden").addClass("hidden");
     feature_nodes.removeClass("dimmed");
     feature_edges.removeClass("dimmed");
     cy.nodes('[properties.kind = "package"]').removeClass("dimmed");
@@ -583,11 +669,16 @@ const showTrace = function (evt) {
     feature_edges.addClass("feature_shown");
 
     feature_nodes.forEach((node) => {
-      const trc = arrayIntersection(trace_names, node.data("properties.traces"));
-      node.style("background-gradient-stop-colors", trc.map((t) => colorMap[t]).join(" "));
+      const trc = arrayIntersection(
+        trace_names,
+        node.data("properties.traces")
+      );
+      node.style(
+        "background-gradient-stop-colors",
+        trc.map((t) => colorMap[t]).join(" ")
+      );
       // console.log(trc.map((t) => colorMap[t]).join(" "));
     });
-
   } else {
     cy.elements().removeClass("dimmed");
     cy.elements().removeClass("feature_shown");
@@ -597,20 +688,20 @@ const showTrace = function (evt) {
 };
 
 const showBug = function (evt) {
-
   const bug_names = Array.from(document.getElementsByName("showbugs"))
-      .filter((e) => e.checked)
-      .map((e) => e.value);
+    .filter((e) => e.checked)
+    .map((e) => e.value);
 
   Array.from(document.getElementsByClassName("buglabel")).forEach((e) => {
     e.style.backgroundColor = "";
   });
 
   if (bug_names.length > 0) {
-
     const colorMap = {};
     for (var i = 0; i < bug_names.length; i++) {
-      const labelElement = document.querySelector(`label[for="bug-${bug_names[i]}"]`);
+      const labelElement = document.querySelector(
+        `label[for="bug-${bug_names[i]}"]`
+      );
       labelElement.style.backgroundColor = ft_colors[i];
       colorMap[bug_names[i]] = ft_colors[i];
     }
@@ -618,17 +709,20 @@ const showBug = function (evt) {
     const bug_nodes = cy.nodes().filter(function (node) {
       return bug_names.some(function (bug) {
         try {
-          return node.data()["properties"]["vulnerabilities"] && node.data()["properties"]["vulnerabilities"].some((e)=> e["analysis_name"]===bug);
-        }catch (e){
-
-        }
+          return (
+            node.data()["properties"]["vulnerabilities"] &&
+            node
+              .data()
+              ["properties"]["vulnerabilities"].some(
+                (e) => e["analysis_name"] === bug
+              )
+          );
+        } catch (e) {}
       });
     });
 
-
-
     cy.elements().addClass("dimmed");
-    cy.elements('.hidden').removeClass('hidden').addClass("hidden");
+    cy.elements(".hidden").removeClass("hidden").addClass("hidden");
     bug_nodes.removeClass("dimmed");
 
     cy.nodes('[properties.kind = "file"]').removeClass("dimmed");
@@ -636,17 +730,19 @@ const showBug = function (evt) {
 
     bug_nodes.addClass("bug_shown");
 
-
-
-
     bug_nodes.forEach((node) => {
-      const trc = arrayIntersection(bug_names, node.data()["properties"]["vulnerabilities"].map((vul)=> {
-        return vul["analysis_name"]
-      }));
-      node.style("background-gradient-stop-colors", trc.map((t) => colorMap[t]).join(" "));
+      const trc = arrayIntersection(
+        bug_names,
+        node.data()["properties"]["vulnerabilities"].map((vul) => {
+          return vul["analysis_name"];
+        })
+      );
+      node.style(
+        "background-gradient-stop-colors",
+        trc.map((t) => colorMap[t]).join(" ")
+      );
       // console.log(trc.map((t) => colorMap[t]).join(" "));
     });
-
   } else {
     cy.elements().removeClass("dimmed");
     cy.elements().removeClass("bug_shown");
@@ -654,8 +750,6 @@ const showBug = function (evt) {
   }
   cy.edges(`[interaction = "${parentRel}"]`).style("display", "none");
 };
-
-
 
 function openSidebarTab(evt, cityName) {
   let i, x, tablinks;
@@ -678,20 +772,21 @@ function bindPopper(target) {
     existingTarget.remove();
   }
 
-  if (target.data()["properties"].hasOwnProperty('vulnerabilities') && target.data()["properties"]["vulnerabilities"].length >0) {
-
+  if (
+    target.data()["properties"].hasOwnProperty("vulnerabilities") &&
+    target.data()["properties"]["vulnerabilities"].length > 0
+  ) {
     let popper = target.popper({
       content: () => {
         // create div container
-        let tooltip = document.createElement('div');
+        let tooltip = document.createElement("div");
         // adding id for easier JavaScript control
         tooltip.id = tooltipId;
 
         // adding class for easier CSS control
-        tooltip.classList.add('target-popper');
+        tooltip.classList.add("target-popper");
 
         // create actual table
-
 
         // append table to div container
 
@@ -700,9 +795,15 @@ function bindPopper(target) {
         // loop through target data
         for (let prop in targetData) {
           let targetValue = targetData[prop];
-          let p= document.createElement('p');
-          p.innerText = target.data()["properties"]["vulnerabilities"][prop]["analysis_name"]+": "+target.data()["properties"]["vulnerabilities"][prop]["description"];
-          tooltip.appendChild(p)
+          let p = document.createElement("p");
+          p.innerText =
+            target.data()["properties"]["vulnerabilities"][prop][
+              "analysis_name"
+            ] +
+            ": " +
+            target.data()["properties"]["vulnerabilities"][prop]["description"];
+          tooltip.appendChild(p);
+          console.log();
         }
 
         document.body.appendChild(tooltip);
@@ -711,50 +812,48 @@ function bindPopper(target) {
       },
       popper: {
         placement: "auto",
-        options:{
-          offset:[0,40]
+        options: {
+          offset: [0, 40],
+        },
+      },
+    });
+
+    target.on("position", () => {
+      popper.update();
+    });
+
+    target.cy().on("pan zoom resize", () => {
+      popper.update();
+    });
+
+    target
+      .on("mouseover", () => {
+        if (!target.hasClass("dimmed")) {
+          if (document.getElementById(tooltipId)) {
+            document.getElementById(tooltipId).classList.add("active");
+          }
         }
-      }
-    });
-
-    target.on('position', () => {
-      popper.update();
-    });
-
-    target.cy().on('pan zoom resize', () => {
-      popper.update();
-    });
-
-
-    target.on('mouseover', () => {
-      if(!target.hasClass('dimmed')){
+      })
+      .on("mouseout", () => {
         if (document.getElementById(tooltipId)) {
-          document.getElementById(tooltipId).classList.add('active');
+          document.getElementById(tooltipId).classList.remove("active");
         }
-      }
-
-    }).on('mouseout', () => {
-      if (document.getElementById(tooltipId)) {
-        document.getElementById(tooltipId).classList.remove('active');
-      }
-    })
+      });
   }
 
-  if (target.data()["properties"].hasOwnProperty('description')) {
-
+  if (target.data()["properties"].hasOwnProperty("description")) {
     let popper = target.popper({
       content: () => {
         // create div container
-        let tooltip = document.createElement('div');
+        let tooltip = document.createElement("div");
 
         // adding id for easier JavaScript control
         tooltip.id = tooltipId;
 
         // adding class for easier CSS control
-        tooltip.classList.add('target-popper');
+        tooltip.classList.add("target-popper");
 
         // create actual table
-
 
         // append table to div container
 
@@ -768,30 +867,30 @@ function bindPopper(target) {
         return tooltip;
       },
       popper: {
-        placement: "auto"
-      }
+        placement: "auto",
+      },
     });
 
-    target.on('position', () => {
+    target.on("position", () => {
       popper.update();
     });
 
-    target.cy().on('pan zoom resize', () => {
+    target.cy().on("pan zoom resize", () => {
       popper.update();
     });
 
-
-    target.on('mouseover', () => {
-      if (!target.hasClass('dimmed')) {
-        if (document.getElementById(tooltipId)) {
-          document.getElementById(tooltipId).classList.add('active');
+    target
+      .on("mouseover", () => {
+        if (!target.hasClass("dimmed")) {
+          if (document.getElementById(tooltipId)) {
+            document.getElementById(tooltipId).classList.add("active");
+          }
         }
-      }
-
-    }).on('mouseout', () => {
-      if (document.getElementById(tooltipId)) {
-        document.getElementById(tooltipId).classList.remove('active');
-      }
-    })
+      })
+      .on("mouseout", () => {
+        if (document.getElementById(tooltipId)) {
+          document.getElementById(tooltipId).classList.remove("active");
+        }
+      });
   }
 }
