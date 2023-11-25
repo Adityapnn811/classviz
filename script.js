@@ -377,6 +377,18 @@ const fileUpload = function () {
   });
 };
 
+const initiateRandomEles = function () {
+  const nodeCounts = 10000;
+  const nodeLabels = "Structure";
+  const edgeLabels = "class";
+  const randomizedEles = randomizeEles(nodeCounts, nodeLabels, edgeLabels);
+  const eles = prepareEles(randomizedEles.elements);
+  console.log(eles)
+  const style = fetch("style.cycss").then((res) => res.text());
+
+  Promise.all([eles, style]).then(initCy);
+};
+
 flip = true;
 const toggleVisibility = function () {
   cy.style()
