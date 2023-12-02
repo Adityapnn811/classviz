@@ -123,7 +123,7 @@ function generateExpColOptions(layoutName = "klay") {
     undoable: false,
     cueEnabled: true,
     expandCollapseCuePosition: "top-left",
-    groupEdgesOfSameTypeOnCollapse: true,
+    groupEdgesOfSameTypeOnCollapse: false,
     allowNestedEdgeCollapse: true,
   };
 
@@ -154,6 +154,14 @@ function initCy(payload) {
       document
         .getElementById("expandNodes")
         .addEventListener("click", () => api.expandAll());
+      document.getElementById("collapseEdges").addEventListener("click", () => {
+        api.collapseAllEdges({
+          groupEdgesOfSameTypeOnCollapse:
+            generateExpColOptions().groupEdgesOfSameTypeOnCollapse,
+          allowNestedEdgeCollapse:
+            generateExpColOptions().allowNestedEdgeCollapse,
+        });
+      });
     },
 
     style: payload[1],
@@ -163,7 +171,7 @@ function initCy(payload) {
 
   setParents(parentRel, false);
 
-  // Ini buat isolasi node yg package
+  // Isolate nodes with kind equals to package
   cy.nodes('[properties.kind = "package"]').forEach((n, idx) => {
     const d = n.ancestors().length;
     const grey = Math.min(160 + d * 20, 255);
@@ -378,12 +386,11 @@ const fileUpload = function () {
 };
 
 const initiateRandomEles = function () {
-  const nodeCounts = 10000;
+  const nodeCounts = 50;
   const nodeLabels = "Structure";
   const edgeLabels = "class";
   const randomizedEles = randomizeEles(nodeCounts, nodeLabels, edgeLabels);
   const eles = prepareEles(randomizedEles.elements);
-  console.log(eles)
   const style = fetch("style.cycss").then((res) => res.text());
 
   Promise.all([eles, style]).then(initCy);
@@ -635,7 +642,6 @@ const showRS = function (evt) {
     cy.nodes(`[properties.rs = "${evt.value}"]`)
       .connectedEdges()
       .filter((e) => {
-        console.log(e.source(), e.target());
         return !e.source().hasClass("dimmed") && !e.target().hasClass("dimmed");
       })
       .removeClass("dimmed");
